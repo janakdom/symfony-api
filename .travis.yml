@@ -1,0 +1,67 @@
+language: php
+os: linux
+services:
+  - mysql
+
+cache:
+    directories:
+        - .phpunit
+        - php-$MIN_PHP
+        - ~/php-ext
+
+jobs:
+  fast_finish: true
+  include:
+    - php: 7.3
+    - php: 7.4
+
+env:
+  global:
+    - SYMFONY_VERSION="5.0.*" DB=mysql
+    - SYMFONY_DEPRECATIONS_HELPER=0
+
+before_install:
+  - composer self-update
+  - \cp ./.env.travis ./.env
+  - rm ./.env.dev
+  - composer install
+
+install:
+  - php bin/phpunit install
+  - php bin/console doctrine:database:create
+  - php bin/console doctrine:schema:create
+
+before_script:
+  - php bin/console cache:clear --env=dev --no-interaction
+  - php bin/console cache:clear --env=prod --no-interaction
+  - php bin/console cache:pool:clear cache.global_clearer  --no-interaction
+  - php bin/console assets:install public --symlink
+  - rm -R var/cache
+
+# Run script
+script:
+# this checks that the Twig template files contain no syntax errors
+  - php bin/console lint:twig templates --env=dev --show-deprecations --no-interaction
+# this checks that the YAML config files contain no syntax errors
+  - php bin/console lint:yaml config --env=dev --parse-tags --no-interaction
+# this checks that arguments injected into services match type declarations
+  - php bin/console lint:container --env=dev --no-interaction
+# Actual Security check
+  - php bin/console security:check
+# this checks that Doctrine's mapping configurations are valid
+  - php bin/console doctrine:schema:validate --skip-sync -vvv --no-interaction
+  
+#  - php bin/phpunit
+  
+# PRODUCTION
+  - composer dump-env prod
+  - rm -R var/cache
+  - composer install --no-dev --optimize-autoloader --classmap-authoritative --no-interaction --no-cache
+  - APP_ENV=prod APP_DEBUG=0 php bin/console cache:clear
+
+# this checks that arguments injected into services match type declarations
+  - php bin/console lint:container --env=prod --no-debug --no-interaction
+
+# After a build, send email notification with the build results
+notifications:
+  email: mail@dominikjanak.cz
